@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="หยวนเซิน">
+  <meta name="theme-color" content="#171005">
+  <title>หยวนเซิน 源心</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="icon" href="icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     OVERLAY: NOTIFY POPUP
+════════════════════════════════════════ -->
+<div id="notify-overlay">
+  <div id="notify-box">
+    <span class="notify-icon">🔔</span>
+    <h2>ออเดอร์ใหม่!</h2>
+    <p id="notify-msg">มีลูกค้าสั่งอาหาร<br>กรุณาตรวจสอบรายการ</p>
+    <button class="notify-close" onclick="closeNotify()">รับทราบ — ดูออเดอร์</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     MODAL: ADD MENU
+════════════════════════════════════════ -->
+<div id="add-menu-modal">
+  <div id="add-menu-inner">
+    <h2>เพิ่มเมนูใหม่</h2>
+
+    <div class="form-group">
+      <label>ไอคอน (emoji)</label>
+      <input type="text" id="f-emoji" value="🍜" maxlength="2">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>ชื่อเมนู (ไทย)</label>
+        <input type="text" id="f-name" placeholder="เช่น เป็ดพะโล้">
+      </div>
+      <div class="form-group">
+        <label>ชื่อจีน (ไม่บังคับ)</label>
+        <input type="text" id="f-cn" placeholder="เช่น 卤鸭">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>คำอธิบาย</label>
+      <input type="text" id="f-desc" placeholder="เช่น ตุ๋นนุ่ม กลิ่นหอม 5 เครื่องเทศ">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label>ราคา (บาท)</label>
+        <input type="number" id="f-price" placeholder="280">
+      </div>
+      <div class="form-group">
+        <label>หมวดหมู่</label>
+        <select id="f-cat">
+          <option value="อาหารหลัก">อาหารหลัก</option>
+          <option value="อาหารเรียกน้ำย่อย">เรียกน้ำย่อย</option>
+          <option value="ซุปและน้ำแกง">ซุป</option>
+          <option value="ข้าวและก๋วยเตี๋ยว">ข้าว / ก๋วยเตี๋ยว</option>
+          <option value="ของหวาน">ของหวาน</option>
+          <option value="เครื่องดื่ม">เครื่องดื่ม</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeAddMenu()">ยกเลิก</button>
+      <button class="btn-save" onclick="saveMenu()">เพิ่มเมนู</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PAGE: เมนู
+════════════════════════════════════════ -->
+<div class="page active" id="page-menu">
+  <div class="page-header">
+    <h1>หยวนเซิน · 源心</h1>
+    <p>อาหารจีนหรู · ผ่อนคลายทุกมื้อ</p>
+    <div class="header-ornament">
+      <div class="header-ornament-dot"></div>
+      <div class="header-ornament-dot"></div>
+      <div class="header-ornament-dot"></div>
+    </div>
+  </div>
+
+  <!-- เลือกโต๊ะ -->
+  <div class="table-section">
+    <div class="table-section-label">เลือกโต๊ะ</div>
+    <div class="table-select" id="table-select">
+      <button class="table-chip selected" data-table="โต๊ะ 1" onclick="selectTable(this)">โต๊ะ 1</button>
+      <button class="table-chip" data-table="โต๊ะ 2" onclick="selectTable(this)">โต๊ะ 2</button>
+      <button class="table-chip" data-table="โต๊ะ 3" onclick="selectTable(this)">โต๊ะ 3</button>
+      <button class="table-chip" data-table="โต๊ะ 4" onclick="selectTable(this)">โต๊ะ 4</button>
+      <button class="table-chip" data-table="โต๊ะ 5" onclick="selectTable(this)">โต๊ะ 5</button>
+      <button class="table-chip" data-table="Takeaway" onclick="selectTable(this)">Takeaway</button>
+    </div>
+  </div>
+
+  <div id="menu-list"></div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PAGE: ตะกร้า
+════════════════════════════════════════ -->
+<div class="page" id="page-cart">
+  <div class="page-header">
+    <h1>รายการสั่ง</h1>
+    <p id="cart-header-table">โต๊ะ 1</p>
+  </div>
+
+  <div id="cart-list"></div>
+
+  <div class="cart-note">
+    <textarea id="cart-note-text" rows="2"
+      placeholder="หมายเหตุถึงครัว (เช่น ไม่ใส่ผักชี, เผ็ดน้อย...)"></textarea>
+  </div>
+
+  <div class="cart-summary" id="cart-summary-box"></div>
+
+  <button class="order-btn" onclick="placeOrder()">
+    ยืนยันออเดอร์ · 確認訂單
+  </button>
+</div>
+
+<!-- ══════════════════════════════════════
+     PAGE: ออเดอร์
+════════════════════════════════════════ -->
+<div class="page" id="page-orders">
+  <div class="page-header">
+    <h1>ออเดอร์</h1>
+    <p id="order-date-label"></p>
+  </div>
+
+  <div class="order-tabs">
+    <button class="order-tab active" onclick="filterOrders('new', this)">รอรับ 🔴</button>
+    <button class="order-tab" onclick="filterOrders('cooking', this)">กำลังทำ 🔵</button>
+    <button class="order-tab" onclick="filterOrders('done', this)">เสร็จแล้ว ✅</button>
+    <button class="order-tab" onclick="filterOrders('all', this)">ทั้งหมด</button>
+  </div>
+
+  <div id="order-list"></div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PAGE: สรุปยอด
+════════════════════════════════════════ -->
+<div class="page" id="page-summary">
+  <div class="page-header">
+    <h1>สรุปยอด</h1>
+    <p>วันนี้</p>
+  </div>
+  <div id="summary-content"></div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PAGE: จัดการร้าน
+════════════════════════════════════════ -->
+<div class="page" id="page-manage">
+  <div class="page-header">
+    <h1>จัดการร้าน</h1>
+    <p>ตั้งค่าเมนูและระบบ</p>
+  </div>
+
+  <div style="margin-top:8px">
+    <div class="manage-btn" onclick="showAddMenu()">
+      <div class="manage-btn-icon">➕</div>
+      <div class="manage-btn-text">
+        <h3>เพิ่มเมนูใหม่</h3>
+        <p>เพิ่มสินค้าหรือเครื่องดื่มลงเมนู</p>
+      </div>
+    </div>
+
+    <div class="manage-btn" onclick="showEditMenuList()">
+      <div class="manage-btn-icon">✏️</div>
+      <div class="manage-btn-text">
+        <h3>แก้ไข / ลบเมนู</h3>
+        <p>อัปเดตราคาหรือนำเมนูออก</p>
+      </div>
+    </div>
+
+    <div class="manage-btn" onclick="testNotify()">
+      <div class="manage-btn-icon">🔔</div>
+      <div class="manage-btn-text">
+        <h3>ทดสอบแจ้งเตือน</h3>
+        <p>ตรวจสอบว่าเสียงและ popup ทำงาน</p>
+      </div>
+    </div>
+
+    <div class="manage-btn" onclick="clearDoneOrders()">
+      <div class="manage-btn-icon">🗑️</div>
+      <div class="manage-btn-text">
+        <h3>ล้างออเดอร์เสร็จแล้ว</h3>
+        <p>ลบออเดอร์ที่เสร็จสิ้นออกจากรายการ</p>
+      </div>
+    </div>
+
+    <div class="discord-panel">
+      <div class="discord-panel-title">💬 แจ้งเตือนออเดอร์ผ่าน Discord</div>
+      <p class="discord-panel-desc">เมื่อมีลูกค้ายืนยันออเดอร์ ระบบจะส่งข้อความแจ้งเตือนไปยังช่อง Discord นี้โดยอัตโนมัติ</p>
+
+      <div class="form-group">
+        <label>Discord Webhook URL</label>
+        <input type="text" id="discord-webhook-url" placeholder="https://discord.com/api/webhooks/...">
+      </div>
+
+      <div class="modal-btns">
+        <button class="btn-cancel" onclick="testDiscordWebhook()">ทดสอบส่ง</button>
+        <button class="btn-save" onclick="saveDiscordWebhook()">บันทึก</button>
+      </div>
+
+      <p id="discord-status" class="discord-status"></p>
+
+      <details class="discord-help">
+        <summary>วิธีสร้าง Discord Webhook</summary>
+        <ol>
+          <li>ไปที่ช่อง Discord ที่ต้องการรับแจ้งเตือน → ⚙️ ตั้งค่าช่อง → Integrations</li>
+          <li>กด "Create Webhook" ตั้งชื่อได้ตามต้องการ แล้วกด "Copy Webhook URL"</li>
+          <li>นำ URL ที่คัดลอกมาวางในช่องด้านบน แล้วกด "บันทึก"</li>
+        </ol>
+      </details>
+    </div>
+
+    <div class="discord-panel">
+      <div class="discord-panel-title">📊 ฐานข้อมูล Google Sheets</div>
+      <p class="discord-panel-desc">เมนูและออเดอร์ทั้งหมดจะถูกซิงก์ขึ้น Google Sheet นี้อัตโนมัติทุกครั้งที่มีการเปลี่ยนแปลง ใช้เป็นฐานข้อมูล/แบ็กอัประยะยาว ดูรายงานนอกแอปได้ และซิงก์ข้อมูลข้ามอุปกรณ์ได้ (เช่น เปิดแอปพร้อมกัน 2 เครื่อง)</p>
+
+      <div class="form-group">
+        <label>Google Apps Script Web App URL</label>
+        <input type="text" id="sheets-webapp-url" placeholder="https://script.google.com/macros/s/.../exec">
+      </div>
+
+      <div class="modal-btns">
+        <button class="btn-cancel" onclick="testSheetsConnection()">ทดสอบเชื่อมต่อ</button>
+        <button class="btn-save" onclick="saveSheetsUrl()">บันทึก</button>
+      </div>
+      <div class="modal-btns" style="margin-top:0">
+        <button class="btn-cancel" style="width:100%" onclick="pullFromSheetManual()">🔄 ดึงข้อมูลล่าสุดจาก Sheet</button>
+      </div>
+
+      <p id="sheets-status" class="discord-status"></p>
+
+      <details class="discord-help">
+        <summary>วิธีสร้างฐานข้อมูล Google Sheets (ทำครั้งเดียว)</summary>
+        <ol>
+          <li>สร้าง Google Sheet ใหม่ที่ sheets.new</li>
+          <li>เมนู "ส่วนขยาย" (Extensions) → "Apps Script"</li>
+          <li>ลบโค้ดตัวอย่างเดิมออกทั้งหมด แล้ววางโค้ดจากไฟล์ Code.gs ที่แนบมาให้แทน</li>
+          <li>กด "Deploy" → "New deployment" → เลือกประเภท "Web app"</li>
+          <li>ตั้งค่า Execute as: "Me" และ Who has access: "Anyone" แล้วกด "Deploy"</li>
+          <li>กด "Authorize access" แล้วอนุญาตสิทธิ์ตามที่ระบบขอ (จะมีคำเตือนเพราะเป็นสคริปต์ของเราเอง กด "Advanced" → "Go to project (unsafe)" ได้ตามปกติ)</li>
+          <li>คัดลอก "Web app URL" ที่ได้ (ลงท้ายด้วย /exec) มาวางในช่องด้านบน แล้วกด "บันทึก"</li>
+        </ol>
+      </details>
+    </div>
+
+    <div class="install-hint">
+      <div class="install-hint-title">💡 วิธีติดตั้งบนมือถือ</div>
+      <div class="install-hint-body">
+        <b>iPhone / iPad:</b> เปิดในซาฟารี → กดแชร์ → "Add to Home Screen"<br>
+        <b>Android:</b> เปิดใน Chrome → กด ⋮ → "Add to Home Screen"<br><br>
+        แอปจะอยู่หน้าจอหลักเหมือนแอปทั่วไป ใช้งานได้แม้ไม่มีอินเทอร์เน็ต
+      </div>
+    </div>
+  </div>
+
+  <div id="edit-menu-panel"></div>
+</div>
+
+<!-- ══════════════════════════════════════
+     BOTTOM NAV
+════════════════════════════════════════ -->
+<nav id="nav">
+  <button class="nav-btn active" onclick="showPage('menu', this)" id="nav-menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M4 6h16M4 12h16M4 18h10"/>
+    </svg>
+    เมนู
+  </button>
+
+  <button class="nav-btn" onclick="showPage('cart', this)" id="nav-cart" style="position:relative">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+    </svg>
+    ตะกร้า
+    <span class="nav-badge" id="cart-badge" style="display:none"></span>
+  </button>
+
+  <button class="nav-btn" onclick="showPage('orders', this)" id="nav-orders" style="position:relative">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+      <rect x="9" y="3" width="6" height="4" rx="1"/>
+      <path d="M9 12h6M9 16h4"/>
+    </svg>
+    ออเดอร์
+    <span class="nav-badge" id="orders-badge" style="display:none"></span>
+  </button>
+
+  <button class="nav-btn" onclick="showPage('summary', this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+    ยอดขาย
+  </button>
+
+  <button class="nav-btn" onclick="showPage('manage', this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.07 4.93A9.99 9.99 0 0 0 12 2a9.99 9.99 0 0 0-7.07 2.93L12 12l7.07-7.07z
+               M4.93 19.07A9.99 9.99 0 0 0 12 22a9.99 9.99 0 0 0 7.07-2.93L12 12 4.93 19.07z"/>
+    </svg>
+    จัดการ
+  </button>
+</nav>
+
+<!-- ══════════════════════════════════════
+     CART FLOAT BUTTON
+════════════════════════════════════════ -->
+<div id="cart-float">
+  <div>
+    <div id="cart-float-count"></div>
+    <div id="cart-float-total"></div>
+  </div>
+  <button id="cart-float-btn"
+    onclick="showPage('cart', document.getElementById('nav-cart'))">
+    ดูตะกร้า →
+  </button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
