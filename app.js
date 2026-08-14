@@ -34,8 +34,22 @@ let orders = [];
 let orderCounter = 1;
 let currentTable = 'โต๊ะ 1';
 let currentOrderFilter = 'new';
+let currentOrderTableFilter = 'all';
 let menuIdCounter = 9;
 let audioCtx = null;
+
+// ── TABLE STATUS ─────────────────────────────────────
+// Tracks, per physical dine-in table: whether it's occupied, the
+// customer's name (optional), and how many people are seated there.
+// Takeaway isn't a physical table so it's excluded from this tracking.
+const DINE_IN_TABLES = ['โต๊ะ 1', 'โต๊ะ 2', 'โต๊ะ 3', 'โต๊ะ 4', 'โต๊ะ 5'];
+let tables = {}; // { 'โต๊ะ 1': { occupied: false, name: '', pax: 0 }, ... }
+
+function ensureTablesInit() {
+  DINE_IN_TABLES.forEach(t => {
+    if (!tables[t]) tables[t] = { occupied: false, name: '', pax: 0 };
+  });
+}
 
 // ── PERSISTENCE ─────────────────────────────────────
 // Everything used to live only in memory, so a page refresh, a crashed
@@ -47,7 +61,7 @@ let audioCtx = null;
 function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      menus, orders, orderCounter, menuIdCounter, currentTable,
+      menus, orders, orderCounter, menuIdCounter, currentTable, tables,
     }));
   } catch (e) { /* storage unavailable (private mode, quota, etc.) */ }
   syncToSheet(); // fire-and-forget push to Google Sheets; no-op if not configured
@@ -63,6 +77,7 @@ function loadState() {
     if (Number.isFinite(s.orderCounter)) orderCounter = s.orderCounter;
     if (Number.isFinite(s.menuIdCounter)) menuIdCounter = s.menuIdCounter;
     if (typeof s.currentTable === 'string') currentTable = s.currentTable;
+    if (s.tables && typeof s.tables === 'object') tables = s.tables;
   } catch (e) { /* corrupted or unavailable storage — fall back to defaults */ }
 }
 
@@ -118,7 +133,7 @@ function showPage(page, btn) {
   if (btn) btn.classList.add('active');
 
   if (page === 'cart')    renderCart();
-  if (page === 'orders')  renderOrders();
+  if (page === 'orders')  { renderTableStatus(); renderOrderTableFilter(); renderOrders(); }
   if (page === 'summary') renderSummary();
   if (page === 'menu')    renderMenu();
   if (page === 'manage') {
@@ -126,6 +141,11 @@ function showPage(page, btn) {
     if (input) input.value = getDiscordWebhookUrl();
     const statusEl = document.getElementById('discord-status');
     if (statusEl) { statusEl.textContent = ''; statusEl.className = 'discord-status'; }
+
+    const doneInput = document.getElementById('discord-webhook-done-url');
+    if (doneInput) doneInput.value = getDiscordWebhookDoneUrl();
+    const doneStatusEl = document.getElementById('discord-status-done');
+    if (doneStatusEl) { doneStatusEl.textContent = ''; doneStatusEl.className = 'discord-status'; }
 
     const sheetsInput = document.getElementById('sheets-webapp-url');
     if (sheetsInput) sheetsInput.value = getSheetsUrl();
@@ -148,6 +168,103 @@ function selectTable(el) {
   el.classList.add('selected');
   currentTable = el.dataset.table;
   document.getElementById('cart-header-table').textContent = currentTable;
+}
+
+// ── TABLE STATUS PANEL ─────────────────────────────
+// Shows, at a glance, which tables are free and which still have
+// customers — plus who's there and how many people, so staff can see
+// it without walking the floor. "เคลียร์โต๊ะ" resets a table back to
+// free once the customers have left and paid.
+
+function renderTableStatus() {
+  ensureTablesInit();
+  const grid = document.getElementById('table-status-grid');
+  if (!grid) return;
+
+  grid.style.display = 'grid';
+  grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+  grid.style.gap = '10px';
+
+  grid.innerHTML = DINE_IN_TABLES.map(t => {
+    const info = tables[t] || { occupied: false, name: '', pax: 0 };
+    const pending = orders.filter(o => o.table === t && (o.status === 'new' || o.status === 'cooking')).length;
+    const borderColor = info.occupied ? 'rgba(196,74,74,.4)' : 'rgba(94,158,110,.4)';
+    const bgColor = info.occupied ? 'rgba(196,74,74,.08)' : 'rgba(94,158,110,.08)';
+
+    return `
+      <div style="border:1px solid ${borderColor};background:${bgColor};
+                  border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <b>${escapeHtml(t)}</b>
+          <span class="status-badge ${info.occupied ? 'status-new' : 'status-done'}">
+            ${info.occupied ? '🔴 มีลูกค้า' : '🟢 ว่าง'}
+          </span>
+        </div>
+        ${info.occupied ? `
+          <div style="font-size:13px;color:var(--ink-soft)">
+            ${info.name ? escapeHtml(info.name) : 'ไม่ระบุชื่อ'} · ${info.pax > 0 ? info.pax + ' คน' : 'ไม่ระบุจำนวนคน'}
+          </div>` : ''}
+        ${pending > 0 ? `<div style="font-size:12px;color:var(--ink-soft)">📋 ออเดอร์ค้าง ${pending} รายการ</div>` : ''}
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <button class="order-action" onclick="openTable('${t}')">${info.occupied ? '✏️ แก้ไขข้อมูล' : '🧾 เปิดโต๊ะ'}</button>
+          ${info.occupied ? `<button class="order-action primary" onclick="clearTable('${t}')">🧹 เคลียร์โต๊ะ</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// Marks a table occupied and records/updates who's sitting there and
+// how many people, via simple prompts (kept consistent with the
+// confirm()/alert() style already used elsewhere in this app).
+function openTable(t) {
+  ensureTablesInit();
+  const current = tables[t] || { occupied: false, name: '', pax: 0 };
+
+  const name = prompt(`ชื่อลูกค้า (${t}) — เว้นว่างได้:`, current.name || '');
+  if (name === null) return; // cancelled
+
+  const paxStr = prompt(`จำนวนลูกค้า (${t}):`, current.pax > 0 ? String(current.pax) : '1');
+  if (paxStr === null) return; // cancelled
+
+  const pax = parseInt(paxStr, 10);
+  tables[t] = {
+    occupied: true,
+    name: name.trim(),
+    pax: Number.isFinite(pax) && pax > 0 ? pax : 0,
+  };
+
+  renderTableStatus();
+  saveState();
+}
+
+// Resets a table back to free once customers have left.
+function clearTable(t) {
+  if (!confirm(`เคลียร์ ${t}? โต๊ะจะว่างสำหรับลูกค้าใหม่`)) return;
+  tables[t] = { occupied: false, name: '', pax: 0 };
+  renderTableStatus();
+  saveState();
+}
+
+// ── ORDER TABLE FILTER ─────────────────────────────
+// Lets staff view each table's orders separately instead of one long
+// mixed list — useful once several tables have orders in flight.
+
+function renderOrderTableFilter() {
+  const wrap = document.getElementById('order-table-filter');
+  if (!wrap) return;
+  const options = ['all', ...DINE_IN_TABLES, 'Takeaway'];
+
+  wrap.innerHTML = options.map(t => `
+    <button class="table-chip ${currentOrderTableFilter === t ? 'selected' : ''}"
+      onclick="filterOrdersByTable('${t}', this)">${t === 'all' ? 'ทั้งหมด' : escapeHtml(t)}</button>
+  `).join('');
+}
+
+function filterOrdersByTable(t, btn) {
+  currentOrderTableFilter = t;
+  document.querySelectorAll('#order-table-filter .table-chip').forEach(c => c.classList.remove('selected'));
+  if (btn) btn.classList.add('selected');
+  renderOrders();
 }
 
 // ── MENU RENDERING ─────────────────────────────────
@@ -304,6 +421,14 @@ function placeOrder() {
   cart = [];
   document.getElementById('cart-note-text').value = '';
 
+  // Keep the table-status panel accurate even if staff forgot to
+  // "เปิดโต๊ะ" manually before taking the order — placing an order for a
+  // dine-in table marks it occupied (existing name/pax, if any, is kept).
+  if (DINE_IN_TABLES.includes(currentTable)) {
+    ensureTablesInit();
+    tables[currentTable].occupied = true;
+  }
+
   updateCartUI();
   updateOrdersBadge();
   triggerNotify(order);
@@ -439,6 +564,102 @@ async function sendDiscordNotify(order, overrideUrl) {
   }
 }
 
+// ── DISCORD NOTIFICATION (ORDER COMPLETED) ──────────
+// Separate webhook that fires when staff mark an order "เสร็จแล้ว" (done)
+// in the ออเดอร์ tab — kept independent from the "new order" webhook
+// above so the two can point at the same channel or different ones.
+
+const DISCORD_WEBHOOK_DONE_KEY = 'yuanxin-discord-webhook-done-url';
+
+function getDiscordWebhookDoneUrl() {
+  try { return localStorage.getItem(DISCORD_WEBHOOK_DONE_KEY) || ''; }
+  catch (e) { return ''; }
+}
+
+function saveDiscordWebhookDone() {
+  const input = document.getElementById('discord-webhook-done-url');
+  const val = input.value.trim();
+  const statusEl = document.getElementById('discord-status-done');
+
+  if (val && !/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\//.test(val)) {
+    statusEl.textContent = '⚠️ ลิงก์ไม่ถูกต้อง ต้องขึ้นต้นด้วย https://discord.com/api/webhooks/...';
+    statusEl.className = 'discord-status error';
+    return;
+  }
+
+  try {
+    if (val) localStorage.setItem(DISCORD_WEBHOOK_DONE_KEY, val);
+    else localStorage.removeItem(DISCORD_WEBHOOK_DONE_KEY);
+  } catch (e) {
+    statusEl.textContent = '⚠️ บันทึกไม่สำเร็จ (พื้นที่จัดเก็บใช้งานไม่ได้)';
+    statusEl.className = 'discord-status error';
+    return;
+  }
+
+  statusEl.textContent = val ? '✅ บันทึกแล้ว ระบบจะแจ้งเตือน Discord ทุกครั้งที่ออเดอร์เสร็จสิ้น' : 'ปิดการแจ้งเตือนนี้แล้ว';
+  statusEl.className = 'discord-status success';
+}
+
+async function testDiscordWebhookDone() {
+  const statusEl = document.getElementById('discord-status-done');
+  const url = document.getElementById('discord-webhook-done-url').value.trim() || getDiscordWebhookDoneUrl();
+
+  if (!url) {
+    statusEl.textContent = '⚠️ กรุณาใส่และบันทึก Webhook URL ก่อนทดสอบ';
+    statusEl.className = 'discord-status error';
+    return;
+  }
+
+  statusEl.textContent = 'กำลังส่ง...';
+  statusEl.className = 'discord-status';
+
+  const ok = await sendDiscordNotifyDone({
+    id: 'TEST', table: 'โต๊ะทดสอบ', time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+    items: [{ name: 'ข้อความทดสอบระบบ', qty: 1, price: 0 }], total: 0, note: '',
+  }, url);
+
+  statusEl.textContent = ok ? '✅ ส่งสำเร็จ ลองเช็คช่อง Discord ของคุณ' : '⚠️ ส่งไม่สำเร็จ ตรวจสอบ URL และอินเทอร์เน็ต';
+  statusEl.className = ok ? 'discord-status success' : 'discord-status error';
+}
+
+async function sendDiscordNotifyDone(order, overrideUrl) {
+  const url = overrideUrl || getDiscordWebhookDoneUrl();
+  if (!url) return false;
+
+  const itemLines = order.items
+    .map(i => `• ${escapeHtml(i.name)} × ${i.qty ?? 1}${i.price ? `  —  ฿${(i.price * (i.qty ?? 1)).toLocaleString()}` : ''}`)
+    .join('\n');
+
+  const fields = [
+    { name: 'โต๊ะ', value: String(order.table), inline: true },
+    { name: 'เวลา', value: String(order.time || ''), inline: true },
+    { name: 'ยอดสุทธิ', value: `฿${Number(order.total || 0).toLocaleString()}`, inline: true },
+    { name: 'รายการ', value: itemLines || '-', inline: false },
+  ];
+  if (order.note) fields.push({ name: '📝 หมายเหตุ', value: String(order.note), inline: false });
+
+  const payload = {
+    username: 'หยวนเซิน 源心',
+    embeds: [{
+      title: `✅ ออเดอร์เสร็จสิ้น #${order.id}`,
+      color: 0x4CAF50,
+      fields,
+      timestamp: new Date().toISOString(),
+    }],
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch (e) {
+    return false; // offline / blocked / bad URL — never let this break order flow
+  }
+}
+
 // ── GOOGLE SHEETS DATABASE ───────────────────────────
 // New feature: a Google Sheet (fronted by a tiny Google Apps Script Web
 // App, since Sheets has no public HTTP API of its own) acts as a real
@@ -525,7 +746,7 @@ async function syncToSheet() {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ menus, orders, orderCounter, menuIdCounter }),
+      body: JSON.stringify({ menus, orders, orderCounter, menuIdCounter, tables }),
     });
     return res.ok;
   } catch (e) {
@@ -549,9 +770,10 @@ async function pullFromSheet() {
     if (Array.isArray(s.orders))                  orders = s.orders;
     if (Number.isFinite(s.orderCounter))           orderCounter = s.orderCounter;
     if (Number.isFinite(s.menuIdCounter))          menuIdCounter = s.menuIdCounter;
+    if (s.tables && typeof s.tables === 'object')  tables = s.tables;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        menus, orders, orderCounter, menuIdCounter, currentTable,
+        menus, orders, orderCounter, menuIdCounter, currentTable, tables,
       }));
     } catch (e) { /* storage unavailable */ }
     return true;
@@ -566,7 +788,7 @@ function refreshViewsAfterSync() {
   renderMenu();
   updateOrdersBadge();
   const activePage = document.querySelector('.page.active');
-  if (activePage && activePage.id === 'page-orders')  renderOrders();
+  if (activePage && activePage.id === 'page-orders')  { renderTableStatus(); renderOrderTableFilter(); renderOrders(); }
   if (activePage && activePage.id === 'page-summary') renderSummary();
 }
 
@@ -620,9 +842,13 @@ function renderOrders() {
   document.getElementById('order-date-label').textContent =
     now.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-  const filtered = currentOrderFilter === 'all'
+  let filtered = currentOrderFilter === 'all'
     ? orders
     : orders.filter(o => o.status === currentOrderFilter);
+
+  if (currentOrderTableFilter && currentOrderTableFilter !== 'all') {
+    filtered = filtered.filter(o => o.table === currentOrderTableFilter);
+  }
 
   if (filtered.length === 0) {
     document.getElementById('order-list').innerHTML = `
@@ -675,8 +901,10 @@ function setOrderStatus(id, status) {
   if (order) order.status = status;
   updateOrdersBadge();
   renderOrders();
+  renderTableStatus();
   renderSummary();
   saveState();
+  if (order && status === 'done') sendDiscordNotifyDone(order);
 }
 
 // ── SUMMARY ────────────────────────────────────────
@@ -808,6 +1036,7 @@ function clearDoneOrders() {
 // ── INIT ───────────────────────────────────────────
 
 loadState();
+ensureTablesInit();
 
 // Request notification permission after 2s
 if ('Notification' in window && Notification.permission === 'default') {
