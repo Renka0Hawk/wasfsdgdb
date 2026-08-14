@@ -8,6 +8,7 @@
  *   - Menus       : id, emoji, name, cn, desc, price, cat
  *   - Orders      : id, table, time, dateKey, status, note, total
  *   - OrderItems  : orderId, name, emoji, qty, price
+ *   - Tables      : table, occupied, name, pax   (สถานะโต๊ะ: ว่าง/มีลูกค้า, ชื่อ, จำนวนคน)
  *   - Config      : key, value   (orderCounter, menuIdCounter, updatedAt)
  *
  * ทุกครั้งที่แอปบันทึกข้อมูล (POST) ชีตเหล่านี้จะถูกล้างแล้วเขียนใหม่ทั้งหมด
@@ -78,6 +79,16 @@ function writeState_(ss, s) {
     itemSheet.getRange(2, 1, itemRows.length, 5).setValues(itemRows);
   }
 
+  var tables = (s.tables && typeof s.tables === 'object') ? s.tables : {};
+  var tableNames = Object.keys(tables);
+  var tableSheet = sheet_(ss, 'Tables', ['table', 'occupied', 'name', 'pax']);
+  if (tableNames.length) {
+    tableSheet.getRange(2, 1, tableNames.length, 4).setValues(tableNames.map(function (t) {
+      var info = tables[t] || {};
+      return [t, info.occupied ? 1 : 0, info.name || '', info.pax || 0];
+    }));
+  }
+
   var cfgSheet = sheet_(ss, 'Config', ['key', 'value']);
   cfgSheet.getRange(2, 1, 3, 2).setValues([
     ['orderCounter', s.orderCounter || 1],
@@ -90,6 +101,7 @@ function readState_(ss) {
   var menuSheet  = ss.getSheetByName('Menus');
   var orderSheet = ss.getSheetByName('Orders');
   var itemSheet  = ss.getSheetByName('OrderItems');
+  var tableSheet = ss.getSheetByName('Tables');
   var cfgSheet   = ss.getSheetByName('Config');
 
   var menus = [];
@@ -118,6 +130,13 @@ function readState_(ss) {
     });
   }
 
+  var tables = {};
+  if (tableSheet && tableSheet.getLastRow() > 1) {
+    tableSheet.getRange(2, 1, tableSheet.getLastRow() - 1, 4).getValues().forEach(function (r) {
+      tables[r[0]] = { occupied: !!r[1], name: r[2] || '', pax: Number(r[3]) || 0 };
+    });
+  }
+
   var orderCounter = 1, menuIdCounter = 1;
   if (cfgSheet && cfgSheet.getLastRow() > 1) {
     cfgSheet.getRange(2, 1, cfgSheet.getLastRow() - 1, 2).getValues().forEach(function (r) {
@@ -126,5 +145,5 @@ function readState_(ss) {
     });
   }
 
-  return { menus: menus, orders: orders, orderCounter: orderCounter, menuIdCounter: menuIdCounter };
+  return { menus: menus, orders: orders, tables: tables, orderCounter: orderCounter, menuIdCounter: menuIdCounter };
 }
