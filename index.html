@@ -144,6 +144,16 @@
     <p id="order-date-label"></p>
   </div>
 
+  <div class="table-section">
+    <div class="table-section-label">สถานะโต๊ะ · แตะ "เคลียร์โต๊ะ" เมื่อลูกค้าลุกแล้ว</div>
+    <div id="table-status-grid"></div>
+  </div>
+
+  <div class="table-section">
+    <div class="table-section-label">แยกออเดอร์ตามโต๊ะ</div>
+    <div class="table-select" id="order-table-filter"></div>
+  </div>
+
   <div class="order-tabs">
     <button class="order-tab active" onclick="filterOrders('new', this)">รอรับ 🔴</button>
     <button class="order-tab" onclick="filterOrders('cooking', this)">กำลังทำ 🔵</button>
@@ -234,12 +244,29 @@
     </div>
 
     <div class="discord-panel">
+      <div class="discord-panel-title">✅ แจ้งเตือนเมื่อออเดอร์เสร็จผ่าน Discord</div>
+      <p class="discord-panel-desc">เมื่อกด "เสร็จแล้ว" ในหน้าออเดอร์ ระบบจะส่งข้อความแจ้งเตือนไปยังช่อง Discord นี้แยกต่างหาก — ใช้ช่องเดียวกับด้านบนหรือคนละช่องก็ได้</p>
+
+      <div class="form-group">
+        <label>Discord Webhook URL (ออเดอร์เสร็จ)</label>
+        <input type="text" id="discord-webhook-done-url" placeholder="https://discord.com/api/webhooks/...">
+      </div>
+
+      <div class="modal-btns">
+        <button class="btn-cancel" onclick="testDiscordWebhookDone()">ทดสอบส่ง</button>
+        <button class="btn-save" onclick="saveDiscordWebhookDone()">บันทึก</button>
+      </div>
+
+      <p id="discord-status-done" class="discord-status"></p>
+    </div>
+
+    <div class="discord-panel">
       <div class="discord-panel-title">📊 ฐานข้อมูล Google Sheets</div>
       <p class="discord-panel-desc">เมนูและออเดอร์ทั้งหมดจะถูกซิงก์ขึ้น Google Sheet นี้อัตโนมัติทุกครั้งที่มีการเปลี่ยนแปลง ใช้เป็นฐานข้อมูล/แบ็กอัประยะยาว ดูรายงานนอกแอปได้ และซิงก์ข้อมูลข้ามอุปกรณ์ได้ (เช่น เปิดแอปพร้อมกัน 2 เครื่อง)</p>
 
       <div class="form-group">
         <label>Google Apps Script Web App URL</label>
-        <input type="text" id="sheets-webapp-url" placeholder="https://script.google.com/macros/s/AKfycbzSB5j-GhEXXIVhrLeCf6Z_owyy_MnAb-SB6jS_lqCAk5C2XqSQkGdcn1OEfDol6bzG/exec">
+        <input type="text" id="sheets-webapp-url" placeholder="https://script.google.com/macros/s/.../exec">
       </div>
 
       <div class="modal-btns">
